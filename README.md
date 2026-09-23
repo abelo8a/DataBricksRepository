@@ -1,3 +1,73 @@
+# E2E Sales Data Pipeline - Medallion Architecture in Databricks
+
+This repository contains a production-ready, End-to-End (E2E) data engineering pipeline implementing the **Medallion Architecture** (Bronze -> Silver -> Gold) within **Databricks Community Edition**. It utilizes **Unity Catalog Volumes** for cloud storage and is natively designed for orchestration via **Azure Data Factory (ADF)** using dynamic widgets.
+
+---
+
+## 📐 Architecture Overview
+
+The data pipeline simulates an automated daily batch ingestion governed by external parameters (Widgets), broken down into the following stages:
+
+```text
+[ Python Generator ] ➔ 💾 ADLS Gen2 / UC Volumes (Daily CSVs)
+                              │
+                              ▼
+   [ BRONZE Layer ]   ➔ 🧹 Strict Validation (StructType + badRecordsPath)
+                              │
+                              ▼
+   [ SILVER Layer ]   ➔ 📦 Delta Parquet (Hive-Style Partitioned by Year/Month - Deduplicated)
+                              │
+                              ▼
+   [ GOLD Layer ]     ➔ 📊 Business Aggregations (BI & Power BI Ready Tables)
+```
+
+---
+
+## 📂 Component Structure
+
+The project consists of three core Python/PySpark scripts:
+
+### 1. Data Generator (`GenerateSalesFile.py`)
+* **Purpose:** Simulates the upstream source system by generating realistic test datasets.
+* **Features:** Creates 1,000 sales records using **real corporate brand names** (Google, Microsoft, Oxxo, Cinepolis, etc.), maintaining strict geographic coherence between countries and cities, timestamps for the year 2026, and operational boolean control flags.
+* **Output:** Chronologically named CSV files (e.g., `SalesSampleTest_20260921.csv`).
+
+### 2. Bronze to Silver Layer (`SalesSampleTestBronzeToSilver.py`)
+* **Purpose:** Ingests the daily batch, enforces data quality, and performs deep cleaning.
+* **Best Practices Applied:**
+  * **Dynamic Parameters:** Implements a Databricks text widget (`p_fecha_proceso`) ready to receive the parameterized execution date injected by **Azure Data Factory** via `@formatDateTime(utcNow(), 'yyyy-MM-dd')`.
+  * **Strict Schema Enforcement:** Uses explicit `StructType` definitions to eliminate slow schema inference overhead.
+  * **Error Isolation (Quarantine):** Configures `badRecordsPath` to divert malformed or corrupt rows into an isolated JSON repository without breaking production runs.
+  * **Deduplication & Integrity:** Filters null identifiers and enforces primary key integrity via `.dropDuplicates(["ID_Venta"])`.
+* **Output:** Optimized **Delta Parquet** format physically partitioned by `Anio` and `Mes` (Hive-style partitioning).
+
+### 3. Silver to Gold Layer (`SalesSampleTestSilverToGold.py`)
+* **Purpose:** Analytical transformations and business-level aggregations.
+* **Features:** Applies strict business rules (filters out pending orders and cancelled transactions) to generate accurate financial metrics.
+* **Calculated Metrics:** Total Revenues, Units Sold, Average Ticket, and Transaction Counts grouped by Client/Company and Geographic Region.
+* **Output:** Delta tables optimized with an `overwrite` strategy to guarantee ultra-fast read latencies for BI dashboards.
+
+---
+
+## 🛠️ Azure Data Factory (ADF) Integration
+
+To automate this workflow in Azure:
+1. Add a **Databricks Notebook** activity inside your ADF pipeline pointing to the Silver layer notebook.
+2. In the **Base Parameters** tab, add a new parameter named exactly: `p_fecha_proceso`.
+3. Set its value using the following dynamic expression: `@formatDateTime(utcNow(), 'yyyy-MM-dd')`.
+
+The Databricks notebook will dynamically compute the exact storage path to load only the specific daily file, gracefully failing via `raise ValueError` if the source file is missing.
+
+---
+
+## 🚀 Technologies Used
+* **Apache Spark / PySpark** (Distributed Processing Engine)
+* **Delta Lake** (ACID Transactional Storage Layer)
+* **Databricks Community Edition & Unity Catalog** (Execution & Governance Environment)
+* **Python & Pandas** (Synthetic Data Generation)
+
+***
+
 # Pipeline de Datos de Ventas E2E - Arquitectura Medallion en Databricks
 
 Este repositorio contiene un pipeline de ingeniería de datos completo de extremo a extremo (End-to-End) que implementa la **Arquitectura Medallion** (Bronze -> Silver -> Gold) en **Databricks Community Edition**, utilizando **Unity Catalog Volumes** para el almacenamiento y diseñado para ser orquestado mediante **Azure Data Factory (ADF)**.
